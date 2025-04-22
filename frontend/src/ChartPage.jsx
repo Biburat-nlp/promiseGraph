@@ -172,6 +172,7 @@ const ChartPage = () => {
         issuesMap[formattedDate] = {};
       }
       
+      
       for (const issue of item.issues) {
         const regionId = issue.region_id ? issue.region_id.toString() : "unknown";
         

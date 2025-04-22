@@ -46,6 +46,7 @@ def update_cache():
         offset = 0
         limit = 500
 
+
         while True:
             logging.info(f"📡 Запрос с offset={offset}...")
             payload = {
