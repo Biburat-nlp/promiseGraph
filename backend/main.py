@@ -4,12 +4,14 @@ import redis
 import requests
 import logging
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from datetime import datetime
 from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 app = Flask(__name__)
+CORS(app)
 redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
 
 HEADERS = {
@@ -20,7 +22,6 @@ HEADERS = {
 
 URL_FIND = "https://api-gorod.mos.ru/api/issues/issue/find"
 URL_GET = "https://api-gorod.mos.ru/api/issues/issue/get"
-
 
 def fetch_full_issue_data(issue_ids):
     payload = {
@@ -89,6 +90,11 @@ def update_cache():
 
             if detailed_data:
                 redis_client.set("cached_issues", json.dumps(detailed_data))
+                for issue in detailed_data:
+                    comments = issue.get("comments", [])
+                    issue["monitor_deadline_at"] = extract_monitor_deadline(comments)
+                    issue["deadline_at"] = issue.get("deadline_at")
+
                 redis_client.expire("cached_issues", 600)
                 logging.info(f"✅ Кеш обновлен ({len(detailed_data)} записей).")
             else:
@@ -100,13 +106,18 @@ def update_cache():
         logging.info("⏳ Ожидание 5 минут до следующего обновления...")
         time.sleep(600)
 
+
 def extract_monitor_deadline(comments):
     if isinstance(comments, list):
         for comment in comments:
             monitor = comment.get("monitor")
             if monitor and "deadline_at" in monitor:
-                return monitor["deadline_at"]
+                deadline = monitor["deadline_at"]
+                if deadline is None:
+                    continue
+                return deadline
     return None
+
 
 @app.route("/chart_data", methods=["GET"])
 def chart_data():
@@ -117,22 +128,34 @@ def chart_data():
 
     issues = json.loads(cached_data)
 
-    grouped = defaultdict(int)
+    grouped = defaultdict(lambda: {"count": 0, "issues": []})
 
     for issue in issues:
         comments = issue.get("comments", [])
-        deadline_str = extract_monitor_deadline(comments)
-        if not deadline_str:
+        deadline_value = extract_monitor_deadline(comments)
+        if not deadline_value:
             continue
 
         try:
-            deadline = datetime.fromisoformat(deadline_str)
+            if isinstance(deadline_value, int):
+                deadline = datetime.fromtimestamp(deadline_value)
+            elif isinstance(deadline_value, str):
+                try:
+                    deadline = datetime.fromisoformat(deadline_value)
+                except ValueError:
+                    deadline = datetime.fromtimestamp(int(deadline_value))
+            else:
+                logging.warning(f"Неподдерживаемый тип для deadline: {type(deadline_value)}")
+                continue
+
             date_key = deadline.strftime("%Y-%m-%d")
-            grouped[date_key] += 1
-        except ValueError:
+            grouped[date_key]["count"] += 1
+            grouped[date_key]["issues"].append(issue)
+        except (ValueError, TypeError) as e:
+            logging.error(f"Ошибка при обработке даты '{deadline_value}': {e}")
             continue
 
-    result = [{"date": date, "count": count} for date, count in sorted(grouped.items())]
+    result = [{"date": date, "count": data["count"], "issues": data["issues"]} for date, data in sorted(grouped.items())]
     return jsonify(result)
 
 @app.route("/find_issue", methods=["GET"])
@@ -176,7 +199,8 @@ def find_issue():
 
                 if data:
                     logging.info(f"✅ Найдены данные по issue_id={issue_id}")
-                    return jsonify(data[0])
+                    issue = data[0]
+                    return jsonify(issue)
                 else:
                     logging.warning(f"❌ Обращение {issue_id} не найдено.")
                     return jsonify({"error": "Обращение не найдено"}), 404
