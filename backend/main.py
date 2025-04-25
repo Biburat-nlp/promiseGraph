@@ -55,9 +55,10 @@ def update_cache():
                         "and",
                         ["=", "assignments.role_code", "oiv1"],
                         ["in", "assignments.organization_id",
-                         [9150, 1097, 9153, 9151]], ##
-                        ["or",
+                         [9153, 9151, 9160, 1106]], ##
+                        ["and",
                          ["=", "public_status.title", "Проблема в работе"],
+                         ["=", "status.title", "Опубликован"],
                          ]
                     ],
                     "limit": limit,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine, Legend, Brush
@@ -167,28 +167,39 @@ const ChartPage = () => {
     setDateRange(calculateDefaultDateRange());
   }, [selectedRegions, rawData]);
 
-  const handleWheel = (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    const chartContainer = chartContainerRef.current;
     
-    if (!chartContainerRef.current || chartData.length === 0) return;
-    
-
-    const rect = chartContainerRef.current.getBoundingClientRect();
-    const mouseX = (e.clientX - rect.left) / rect.width;
-    
-    const zoomIntensity = 0.1;
-    const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
-    
-    const viewportRange = viewportEnd - viewportStart;
-    const newViewportRange = Math.max(10, Math.min(100, viewportRange / zoomFactor));
-    
-    const mouseViewportPos = viewportStart + mouseX * viewportRange;
-    const newStart = Math.max(0, mouseViewportPos - (mouseX * newViewportRange));
-    const newEnd = Math.min(100, newStart + newViewportRange);
-    
-    setViewportStart(newStart);
-    setViewportEnd(newEnd);
-  };
+    if (chartContainer) {
+      const handleWheelEvent = (e) => {
+        e.preventDefault();
+        
+        if (!chartContainer || chartData.length === 0) return;
+        
+        const rect = chartContainer.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left) / rect.width;
+        
+        const zoomIntensity = 0.1;
+        const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
+        
+        const viewportRange = viewportEnd - viewportStart;
+        const newViewportRange = Math.max(10, Math.min(100, viewportRange / zoomFactor));
+        
+        const mouseViewportPos = viewportStart + mouseX * viewportRange;
+        const newStart = Math.max(0, mouseViewportPos - (mouseX * newViewportRange));
+        const newEnd = Math.min(100, newStart + newViewportRange);
+        
+        setViewportStart(newStart);
+        setViewportEnd(newEnd);
+      };
+      
+      chartContainer.addEventListener('wheel', handleWheelEvent, { passive: false });
+      
+      return () => {
+        chartContainer.removeEventListener('wheel', handleWheelEvent);
+      };
+    }
+  }, [chartContainerRef.current, chartData.length, viewportStart, viewportEnd]);
 
   const calculateDefaultDateRange = () => {
     const today = new Date();
@@ -264,7 +275,7 @@ const ChartPage = () => {
           dateMap[formattedDate][regionId] = 0;
         }
         dateMap[formattedDate][regionId] += 1;
-        
+
         if (!dateMap[formattedDate]["total"]) {
           dateMap[formattedDate]["total"] = 0;
         }
@@ -300,7 +311,7 @@ const ChartPage = () => {
     const date = new Date(ts * 1000);
     return date.toLocaleDateString("ru-RU");
   }
-  
+
   function getExecutorName(issue) {
     const comments = issue.comments || [];
     for (const comment of comments) {
@@ -354,7 +365,6 @@ const ChartPage = () => {
       <div 
   ref={chartContainerRef}
   className="relative"
-  onWheel={handleWheel}
   style={{ overflow: 'hidden' }}
 >
   {/* Кнопка сброса масштаба */}
@@ -386,7 +396,6 @@ const ChartPage = () => {
         domain={['auto', 'auto']}
         allowDataOverflow={true}
         tickFormatter={(value) => value}
-        // Ограничение видимого диапазона
         tickCount={Math.max(3, Math.min(10, Math.floor(10 * (100 / (viewportEnd - viewportStart)))))}
       />
       <YAxis 
