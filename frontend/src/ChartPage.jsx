@@ -168,38 +168,37 @@ const ChartPage = () => {
   }, [selectedRegions, rawData]);
 
   useEffect(() => {
-    const chartContainer = chartContainerRef.current;
-    
-    if (chartContainer) {
-      const handleWheelEvent = (e) => {
-        e.preventDefault();
-        
-        if (!chartContainer || chartData.length === 0) return;
-        
-        const rect = chartContainer.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left) / rect.width;
-        
-        const zoomIntensity = 0.1;
-        const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
-        
-        const viewportRange = viewportEnd - viewportStart;
-        const newViewportRange = Math.max(10, Math.min(100, viewportRange / zoomFactor));
-        
-        const mouseViewportPos = viewportStart + mouseX * viewportRange;
-        const newStart = Math.max(0, mouseViewportPos - (mouseX * newViewportRange));
-        const newEnd = Math.min(100, newStart + newViewportRange);
-        
-        setViewportStart(newStart);
-        setViewportEnd(newEnd);
-      };
+    const handleWheelEvent = (e) => {
+      if (!chartContainerRef.current || chartData.length === 0) return;
       
+      e.preventDefault();
+      
+      const rect = chartContainerRef.current.getBoundingClientRect();
+      const mouseX = (e.clientX - rect.left) / rect.width;
+      
+      const zoomIntensity = 0.1;
+      const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
+      
+      const viewportRange = viewportEnd - viewportStart;
+      const newViewportRange = Math.max(10, Math.min(100, viewportRange / zoomFactor));
+      
+      const mouseViewportPos = viewportStart + mouseX * viewportRange;
+      const newStart = Math.max(0, mouseViewportPos - (mouseX * newViewportRange));
+      const newEnd = Math.min(100, Math.max(newStart + 10, newStart + newViewportRange));
+      
+      setViewportStart(newStart);
+      setViewportEnd(newEnd);
+    };
+    
+    const chartContainer = chartContainerRef.current;
+    if (chartContainer) {
       chartContainer.addEventListener('wheel', handleWheelEvent, { passive: false });
       
       return () => {
         chartContainer.removeEventListener('wheel', handleWheelEvent);
       };
     }
-  }, [chartContainerRef.current, chartData.length, viewportStart, viewportEnd]);
+  }, [chartData, viewportStart, viewportEnd]);
 
   const calculateDefaultDateRange = () => {
     const today = new Date();
@@ -306,6 +305,18 @@ const ChartPage = () => {
   const today = new Date();
   const todayStr = `${String(today.getDate()).padStart(2, "0")}.${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getFullYear()).slice(2)}`;
 
+  // Вычисляем видимый диапазон данных
+  const startIdx = Math.floor(chartData.length * (viewportStart / 100));
+  const endIdx = Math.ceil(chartData.length * (viewportEnd / 100));
+  
+  // Корректируем индексы, чтобы избежать выхода за границы массива
+  const safeStartIdx = Math.max(0, Math.min(startIdx, chartData.length - 1));
+  const safeEndIdx = Math.max(safeStartIdx + 1, Math.min(endIdx, chartData.length));
+  
+  // Получаем видимые даты для установки домена оси X
+  const startDate = chartData[safeStartIdx]?.date;
+  const endDate = chartData[safeEndIdx - 1]?.date;
+
   function formatTimestamp(ts) {
     if (!ts) return "";
     const date = new Date(ts * 1000);
@@ -363,99 +374,90 @@ const ChartPage = () => {
       </div>
 
       <div 
-  ref={chartContainerRef}
-  className="relative"
-  style={{ overflow: 'hidden' }}
->
-  {/* Кнопка сброса масштаба */}
-  {(viewportStart > 0 || viewportEnd < 100) && (
-    <div className="absolute top-2 left-2 z-10">
-      <button 
-        className="px-2 py-1 bg-gray-200 border border-gray-300 rounded hover:bg-gray-300"
-        onClick={() => {
-          setViewportStart(0);
-          setViewportEnd(100);
-          setDateRange(calculateDefaultDateRange());
-        }}
+        ref={chartContainerRef}
+        className="relative"
+        style={{ overflow: 'hidden' }}
       >
-        Сбросить масштаб
-      </button>
-    </div>
-  )}
+        {/* Кнопка сброса масштаба */}
+        {(viewportStart > 0 || viewportEnd < 100) && (
+          <div className="absolute top-2 left-2 z-10">
+            <button 
+              className="px-2 py-1 bg-gray-200 border border-gray-300 rounded hover:bg-gray-300"
+              onClick={() => {
+                setViewportStart(0);
+                setViewportEnd(100);
+                setDateRange(calculateDefaultDateRange());
+              }}
+            >
+              Сбросить масштаб
+            </button>
+          </div>
+        )}
 
-  <ResponsiveContainer width="100%" height={400}>
-    <LineChart 
-      data={chartData} 
-      onClick={handleDateClick}
-      margin={{ top: 20, right: 30, left: 20, bottom: 10 }}
-    >
-      <CartesianGrid strokeDasharray="3 3" />
-      <XAxis 
-        dataKey="date" 
-        type="category"
-        domain={['auto', 'auto']}
-        allowDataOverflow={true}
-        tickFormatter={(value) => value}
-        tickCount={Math.max(3, Math.min(10, Math.floor(10 * (100 / (viewportEnd - viewportStart)))))}
-      />
-      <YAxis 
-        allowDecimals={false} 
-        domain={['auto', 'auto']}
-      />
-      <Tooltip 
-        formatter={(value, name) => {
-          if (name === "total") return ["Всего", value || 0];
-          return [REGION_IDS[name] || name, value || 0];
-        }}
-      />
-      <Legend 
-        formatter={(value) => {
-          if (value === "total") return "Всего";
-          return REGION_IDS[value] || value;
-        }}
-      />
-      
-      {/* Вычисление видимого диапазона данных */}
-      {(() => {
-        if (chartData.length > 0) {
-          const startIdx = Math.floor(chartData.length * (viewportStart / 100));
-          const endIdx = Math.ceil(chartData.length * (viewportEnd / 100));
-          return (
-            <>
-              {selectedRegions.includes("all") && (
+        <ResponsiveContainer width="100%" height={400}>
+          <LineChart 
+            data={chartData.slice(safeStartIdx, safeEndIdx)} 
+            onClick={handleDateClick}
+            margin={{ top: 20, right: 30, left: 20, bottom: 10 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+          >
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis 
+              dataKey="date" 
+              type="category"
+              domain={[startDate, endDate]}
+              allowDataOverflow={true}
+              tickFormatter={(value) => value}
+              tickCount={Math.max(3, Math.min(10, Math.floor(10 * (100 / (viewportEnd - viewportStart)))))}
+            />
+            <YAxis 
+              allowDecimals={false} 
+              domain={['auto', 'auto']}
+            />
+            <Tooltip 
+              formatter={(value, name) => {
+                if (name === "total") return ["Всего", value || 0];
+                return [REGION_IDS[name] || name, value || 0];
+              }}
+            />
+            <Legend 
+              formatter={(value) => {
+                if (value === "total") return "Всего";
+                return REGION_IDS[value] || value;
+              }}
+            />
+            
+            {selectedRegions.includes("all") && (
+              <Line 
+                type="monotone" 
+                dataKey="total" 
+                stroke="#000000" 
+                strokeWidth={2} 
+                name="total"
+                connectNulls={true}
+              />
+            )}
+            
+            {Object.keys(REGION_IDS).map((regionId, index) => (
+              selectedRegions.includes(regionId) && (
                 <Line 
+                  key={regionId}
                   type="monotone" 
-                  dataKey="total" 
-                  stroke="#000000" 
-                  strokeWidth={2} 
-                  name="total"
+                  dataKey={regionId} 
+                  stroke={COLORS[index % COLORS.length]} 
+                  strokeWidth={1.5} 
+                  name={regionId}
                   connectNulls={true}
                 />
-              )}
-              
-              {Object.keys(REGION_IDS).map((regionId, index) => (
-                selectedRegions.includes(regionId) && (
-                  <Line 
-                    key={regionId}
-                    type="monotone" 
-                    dataKey={regionId} 
-                    stroke={COLORS[index % COLORS.length]} 
-                    strokeWidth={1.5} 
-                    name={regionId}
-                    connectNulls={true}
-                  />
-                )
-              ))}
-            </>
-          );
-        }
-        return null;
-      })()}
-      
-      <ReferenceLine x={todayStr} stroke="red" label="Сегодня" strokeDasharray="3 3" />
-    </LineChart>
-  </ResponsiveContainer>
-</div>
+              )
+            ))}
+            
+            <ReferenceLine x={todayStr} stroke="red" label="Сегодня" strokeDasharray="3 3" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
 
       {selectedDate && (
         <div className="mt-4">
