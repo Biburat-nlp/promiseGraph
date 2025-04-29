@@ -131,6 +131,7 @@ const ChartPage = () => {
   const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [viewportStart, setViewportStart] = useState(0);
   const [viewportEnd, setViewportEnd] = useState(100);
+  const [showOverdue, setShowOverdue] = useState(false); 
   const chartContainerRef = useRef(null);
 
   useEffect(() => {
@@ -146,7 +147,7 @@ const ChartPage = () => {
         const data = await response.json();
         setRawData(data);
         
-        processDataWithFilters(data, selectedRegions);
+        processDataWithFilters(data, selectedRegions, showOverdue);
         
         setError(null);
       } catch (error) {
@@ -162,10 +163,10 @@ const ChartPage = () => {
   
   useEffect(() => {
     if (rawData.length > 0) {
-      processDataWithFilters(rawData, selectedRegions);
+      processDataWithFilters(rawData, selectedRegions, showOverdue);
     }
     setDateRange(calculateDefaultDateRange());
-  }, [selectedRegions, rawData]);
+  }, [selectedRegions, rawData, showOverdue]);
 
   useEffect(() => {
     const handleWheelEvent = (e) => {
@@ -204,10 +205,10 @@ const ChartPage = () => {
     const today = new Date();
     
     const startDate = new Date(today);
-    startDate.setDate(today.getDate() - 7);
+    startDate.setDate(today.getDate());  
     
     const endDate = new Date(today);
-    endDate.setDate(today.getDate() + 7);
+    endDate.setDate(today.getDate() + 14); 
     
     return {
       startDate: `${String(startDate.getDate()).padStart(2, "0")}.${String(startDate.getMonth() + 1).padStart(2, "0")}.${String(startDate.getFullYear()).slice(2)}`,
@@ -247,22 +248,32 @@ const ChartPage = () => {
     }
   };
 
-  const processDataWithFilters = (data, regionFilters) => {
+  const processDataWithFilters = (data, regionFilters, includeOverdue = false) => {
     const dateMap = {};
     const issuesMap = {};
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
     for (const item of data) {
       const [year, month, day] = item.date.split("-");
       const formattedDate = `${day}.${month}.${year.slice(2)}`;
+      const itemDate = new Date(`20${year.slice(2)}-${month}-${day}`);
+      
+      if (!includeOverdue && itemDate < today) {
+        continue;
+      }
       
       if (!dateMap[formattedDate]) {
         dateMap[formattedDate] = { date: formattedDate };
         issuesMap[formattedDate] = {};
       }
       
-
       for (const issue of item.issues) {
         const regionId = issue.region_id ? issue.region_id.toString() : "unknown";
+        
+        if (!regionFilters.includes(regionId) && !regionFilters.includes("all")) {
+          continue;
+        }
         
         if (!issuesMap[formattedDate][regionId]) {
           issuesMap[formattedDate][regionId] = [];
@@ -289,13 +300,30 @@ const ChartPage = () => {
       const [dayB, monthB, yearB] = b.date.split(".");
       return new Date(`20${yearA}-${monthA}-${dayA}`) - new Date(`20${yearB}-${monthB}-${dayB}`);
     });
-    
+
     setChartData(formattedData);
     setIssuesByDate(issuesMap);
+    
+    if (formattedData.length > 0 && !includeOverdue) {
+      const todayStr = `${String(today.getDate()).padStart(2, "0")}.${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getFullYear()).slice(2)}`;
+      const todayIndex = formattedData.findIndex(item => item.date === todayStr);
+      
+      if (todayIndex !== -1) {
+        const todayPercent = (todayIndex / formattedData.length) * 100;
+        const viewportSize = viewportEnd - viewportStart;
+        
+        setViewportStart(Math.max(0, todayPercent - viewportSize / 2));
+        setViewportEnd(Math.min(100, todayPercent + viewportSize / 2));
+      }
+    }
   };
 
   const handleRegionFilterChange = (newSelectedRegions) => {
     setSelectedRegions(newSelectedRegions);
+  };
+
+  const handleShowOverdueChange = (event) => {
+    setShowOverdue(event.target.checked);
   };
 
   if (loading) return <div className="p-4">Загрузка данных...</div>;
@@ -305,15 +333,12 @@ const ChartPage = () => {
   const today = new Date();
   const todayStr = `${String(today.getDate()).padStart(2, "0")}.${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getFullYear()).slice(2)}`;
 
-  // Вычисляем видимый диапазон данных
   const startIdx = Math.floor(chartData.length * (viewportStart / 100));
   const endIdx = Math.ceil(chartData.length * (viewportEnd / 100));
   
-  // Корректируем индексы, чтобы избежать выхода за границы массива
   const safeStartIdx = Math.max(0, Math.min(startIdx, chartData.length - 1));
   const safeEndIdx = Math.max(safeStartIdx + 1, Math.min(endIdx, chartData.length));
   
-  // Получаем видимые даты для установки домена оси X
   const startDate = chartData[safeStartIdx]?.date;
   const endDate = chartData[safeEndIdx - 1]?.date;
 
@@ -366,11 +391,27 @@ const ChartPage = () => {
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">Количество обещаний по дням (monitor_deadline_at)</h2>
-        <RegionFilter 
-          regions={REGION_IDS} 
-          selectedRegions={selectedRegions} 
-          onChange={handleRegionFilterChange} 
-        />
+        <div className="flex items-center space-x-4">
+          {/* Show overdue checkbox */}
+          <div className="flex items-center">
+            <input
+              id="show-overdue"
+              type="checkbox"
+              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded mr-2"
+              checked={showOverdue}
+              onChange={handleShowOverdueChange}
+            />
+            <label htmlFor="show-overdue" className="text-sm text-gray-700">
+              Отобразить просрочки
+            </label>
+          </div>
+          
+          <RegionFilter 
+            regions={REGION_IDS} 
+            selectedRegions={selectedRegions} 
+            onChange={handleRegionFilterChange} 
+          />
+        </div>
       </div>
 
       <div 

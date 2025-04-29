@@ -55,7 +55,7 @@ def update_cache():
                         "and",
                         ["=", "assignments.role_code", "oiv1"],
                         ["in", "assignments.organization_id",
-                         [9153, 9151, 9160, 1106]], ##
+                         [9150, 1097, 9153, 9151, 9152, 9154, 9155, 9156, 9157, 9158, 9159, 9160, 9161, 1108, 1106, 1107, 1105, 1103, 1102, 1100, 1099, 1098, 1096, 1104]], ##
                         ["and",
                          ["=", "public_status.title", "Проблема в работе"],
                          ["=", "status.title", "Опубликован"],
@@ -119,7 +119,6 @@ def extract_monitor_deadline(comments):
                     continue
                 return deadline
     return None
-
 
 @app.route("/chart_data", methods=["GET"])
 def chart_data():
