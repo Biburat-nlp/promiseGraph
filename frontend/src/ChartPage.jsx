@@ -392,7 +392,6 @@ const ChartPage = () => {
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold">Количество обещаний по дням (monitor_deadline_at)</h2>
         <div className="flex items-center space-x-4">
-          {/* Show overdue checkbox */}
           <div className="flex items-center">
             <input
               id="show-overdue"
@@ -419,7 +418,6 @@ const ChartPage = () => {
         className="relative"
         style={{ overflow: 'hidden' }}
       >
-        {/* Кнопка сброса масштаба */}
         {(viewportStart > 0 || viewportEnd < 100) && (
           <div className="absolute top-2 left-2 z-10">
             <button 
